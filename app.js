@@ -21,6 +21,7 @@ var about = [{
 ];
 
 module.exports = {
+    name   : 'wikidrill',
     rest   : null,
     about  : about,
     init   : init
@@ -33,7 +34,7 @@ function init(server, pubsub) {
         Drill   = require('./modules/drill'),
         rest    = Express.createServer();
     
-    rest.use('/wikidrill', Express.static(__dirname + '/public'));
+    rest.use(Express.static(__dirname + '/public'));
     
     // configure views
     rest.set('views', __dirname + '/views');
@@ -43,11 +44,11 @@ function init(server, pubsub) {
         rootPath: server.settings.views
     });
     
-    rest.get('/wikidrill', function(req, res, next) {
+    rest.get('/', function(req, res, next) {
         res.render('index', {about:about});
     });
     
-    rest.post('/wikidrill', function(req, res, next) {
+    rest.post('/', function(req, res, next) {
         var result = {success:false, msgType:'error', msg:'Unknow server error'},
             args   = req.body || {};
         
