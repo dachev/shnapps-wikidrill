@@ -48,43 +48,54 @@ function init(server, pubsub) {
         res.render('index', {about:about});
     });
     
-    rest.post('/', function(req, res, next) {
-        var result = {success:false, msgType:'error', msg:'Unknow server error'},
-            args   = req.body || {};
+    var client = pubsub.getClient();
+    client.subscribe('/wikidrill/users/request/*', function(message) {
+        var result = {success:false, msgType:'error', msg:'Unknow server error'};
         
-        if (!args.start_term || !args.end_term) {
+        if (!message.start_term || !message.end_term) {
             result.msg = 'Start or end page is missing or invalid';
-            res.send(result);
             
-            return;
+            var channel = '/wikidrill/users/request/' + message.guid;
+            return client.publish(channel, result);
         }
         
-        drillWikipedia(Drill, res, args.start_term, args.end_term);
+        drillWikipedia(Drill, client, message.guid, message.start_term, message.end_term);
     });
     
     module.exports.rest = rest;
 }
 
     
-function drillWikipedia(Drill, res, startTerm, endTerm) {
-    var result = {success:false, msgType:'error', msg:'Unknow server error'},
-        probe  = Drill.probe(startTerm, endTerm);
+function drillWikipedia(Drill, client, guid, startTerm, endTerm) {
+    var probe   = Drill.probe(startTerm, endTerm),
+        channel = '/wikidrill/users/response/' + guid;
+    
+    probe.on('data', function(item) {
+        var msg = {
+            type : 'item',
+            item : item
+        };
         
-    probe.on('error', function(bit) {
-        result.success = false;
-        result.msgType = 'error';
-        result.msg     = bit.msg || result.msg;
-        result.stack   = bit.stack;
-        
-        res.send(result);
+        return client.publish(channel, msg);
     });
+    
+    probe.on('error', function(data) {
+        var msg = {
+            type  : 'error',
+            msg   : data.msg || 'Unknow server error',
+            stack : data.stack
+        };
         
-    probe.on('complete', function(bit) {
-        result.success = true;
-        result.msgType = 'success';
-        result.msg     = bit.msg;
-        result.stack   = bit.stack;
+        return client.publish(channel, msg);
+    });
+    
+    probe.on('complete', function(data) {
+        var msg = {
+            type  : 'success',
+            msg   : data.msg || '',
+            stack : data.stack
+        };
         
-        res.send(result);
+        return client.publish(channel, msg);
     });
 }

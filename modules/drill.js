@@ -63,6 +63,7 @@ function Probe(startTerm, endTerm) {
             if (currentUrl.href.toLowerCase() == endUrl.href.toLowerCase()) {
                 var item = {url:currentUrl, title:title, $links:$links};
                 stack.push(item);
+                self.emit('data', {item:getTrace([item])[0]});
             
                 self.emit('complete', {
                     msg:'success',
@@ -84,6 +85,7 @@ function Probe(startTerm, endTerm) {
             
             var item = {url:currentUrl, title:title, $links:$links};
             stack.push(item);
+            self.emit('data', {item:getTrace([item])[0]});
             
             counter++;
             loadPage(nextUrl);

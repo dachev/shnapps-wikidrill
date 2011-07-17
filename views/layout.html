@@ -12,14 +12,19 @@
         <script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jquery/1.4.4/jquery.min.js"></script>
         <script type="text/javascript" src="/js/jquery.gritter.min.js"></script>
         <script type="text/javascript" src="/js/about.js"></script>
-        <script type="text/javascript" src="/js/jquery.tmpl.min.js"></script>
+        <script type="text/javascript" src="/faye.js"></script>
+        <script type="text/javascript" src="/wikidrill/js/underscore.1.1.7.min.js"></script>
         <script type="text/javascript" src="/wikidrill/js/main.js"></script>
-        <script id="jquery_tmpl_template" class="template" type="text/html">
-            {{each(i, item) items}}
-                <li>
-                    <a href="${item.url}">${item.title}</a>
-                </li>
-            {{/each}}
+        <script type="text/javascript">
+            _.templateSettings = {
+                evaluate    : /<#([\s\S]+?)#>/g,
+                interpolate : /<#=([\s\S]+?)#>/g
+            };
+        </script>
+        <script id="item_template" class="template" type="text/html">
+            <li>
+                <a href="<#= item.url #>"><#= item.title #></a>
+            </li>
         </script>
     </head>
     <body>

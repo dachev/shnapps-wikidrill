@@ -1,40 +1,50 @@
 $(function() {
-    var $doc     = $(document),
+    var guid     = guid(),
+        $doc     = $(document),
         $inputs  = $('input'),
         $submit  = $inputs.filter('[type="submit"]'),
         $status  = $('#status'),
-        $result  = $('#result'),
-        template = $('#jquery_tmpl_template').template();
+        $result  = $('#result');
+        template = _.template($('#item_template').text());
     
     initInputs();
     disableSubmit();
     
-    $doc.ajaxError(function() {
+    var client = new Faye.Client(location.host + '/faye', {
+        timeout:120
+    });
+    client.subscribe('/wikidrill/users/response/' + guid, function(data) {
+        if (data.type == 'item' && data.type) {
+            var html = template(data.item);
+            return $result.addClass('nonempty').append(html);
+        }
+        
         enableSubmit();
         $submit.removeClass('working');
         $status.removeClass('working').addClass('done');
-        $status.addClass('error').find('.message').html('Unknow server error');
+        $status.addClass(data.type).find('.message').html(data.msg || '');
     });
     
-    $doc.delegate('a', 'click', function() {
+    $doc.delegate('a', 'click', function(ev) {
+        ev.preventDefault();
+        
         var $this = $(this),
             href  = $this.attr('href');
         
         if (!href) { return; }
         
         window.open(href);
-        
-        return false;
     });
     
     $doc.delegate('input', 'keyup change focus blur', function() {
         checkFormValid();
-        return false;
     });
     
-    $doc.delegate('form', 'submit', function() {
+    $doc.delegate('form', 'submit', function(ev) {
+        ev.preventDefault();
+        
         var $this  = $(this),
-            args   = makeArgs(),
+            args   = makeArgs(guid),
             action = $this.attr('action');
         
         for (var i = 0; i < args.length; i++) {
@@ -50,34 +60,12 @@ $(function() {
         $status.removeClass('inactive done error warning success');
         $status.addClass('working').find('.message').html('');
         
-        $.post(action, args, function(response, status, xhr) {
-            enableSubmit();
-            $submit.removeClass('working');
-            $status.removeClass('working').addClass('done');
-            
-            var result = {success:false, msgType:'error', msg:'Unknow server error'};
-            if (status == 'success' && response) {
-                result = response;
-            }
-            
-            if (result.msgType) {
-                $status.addClass(result.msgType).find('.message').html(result.msg || '');
-            }
-            
-            if (result.stack && result.stack.length > 0) {
-                var args = {items:result.stack};
-                
-                $result.
-                    addClass('nonempty').
-                    append($.tmpl(template, args));
-            }
-        });
-        
-        return false;
+        var channel = '/wikidrill/users/request/' + guid;
+        client.publish(channel, args);
     });
     
-    function makeArgs() {
-        var args = {};
+    function makeArgs(guid) {
+        var args = {guid:guid};
         
         $inputs.filter('[type="text"]').each(function() {
             var $this  = $(this),
@@ -126,5 +114,12 @@ $(function() {
     
     function initInputs() {
         $inputs.filter('[type="text"]');
+    }
+    
+    function guid() {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            var r = Math.random()*16|0, v = c == 'x' ? r : (r&0x3|0x8);
+            return v.toString(16);
+        });
     }
 });
