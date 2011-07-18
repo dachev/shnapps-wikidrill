@@ -1,6 +1,6 @@
-var Rest   = require('restler'),
-    JsDom  = require('jsdom'),
-    Url    = require('url');
+var Url    = require('url');
+var Rest   = require('restler');
+var nquery = require('nquery');
 
 Probe.prototype = new process.EventEmitter();
 Probe.prototype.constructor = Probe;
@@ -42,7 +42,10 @@ function Probe(startTerm, endTerm) {
             request    = Rest.get(currentUrl.href, {followRedirects:true});
                 
         request.on('success', function(body) {
-            var $doc = parsePage(body);
+            $ = nquery.createHtmlDocument(body);
+            
+            var doc  = $.window.document;
+            var $doc = $(doc);
             
             if (isDisambiguationPage($doc)) {
                 self.emit('error', {
@@ -53,11 +56,11 @@ function Probe(startTerm, endTerm) {
                 return;
             }
             
-            var $h1      = $doc.find('#firstHeading'),
-                title    = $h1.html(),
-                $content = $doc.find('#bodyContent'),
-                $p       = $content.children().filter('p'),
-                $links   = $p.find('a').not(filterLinks);
+            var $h1      = $doc.find('#firstHeading');
+            var title    = $h1.html();
+            var $content = $doc.find('#bodyContent');
+            var $p       = $content.children().filter('p');
+            var $links   = $p.find('a').not(filterLinks);
             
             // done
             if (currentUrl.href.toLowerCase() == endUrl.href.toLowerCase()) {
@@ -121,25 +124,6 @@ function Probe(startTerm, endTerm) {
         }
         
         return null;
-    }
-    
-    function parsePage(body) {
-        var domOpts = {
-            features: { 
-                'FetchExternalResources'   : false,
-                'ProcessExternalResources' : false
-            }
-        };
-        
-        var window   = JsDom.jsdom(body, null, domOpts).createWindow(),
-            document = window.document;
-        
-        // jquery breaks without this
-        location  = window.location;
-        navigator = {userAgent:'Node.js'};
-        $         = require('jquery').create(window);
-        
-        return $(document);
     }
     
     function makeLink(url) {

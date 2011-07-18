@@ -50,13 +50,15 @@ function init(server, pubsub) {
     
     var client = pubsub.getClient();
     client.subscribe('/wikidrill/users/request/*', function(message) {
-        var result = {success:false, msgType:'error', msg:'Unknow server error'};
-        
         if (!message.start_term || !message.end_term) {
-            result.msg = 'Start or end page is missing or invalid';
-            
             var channel = '/wikidrill/users/request/' + message.guid;
-            return client.publish(channel, result);
+            
+            var msg = {
+                type : 'error',
+                msg  : 'Start or end page is missing or invalid'
+            };
+            
+            return client.publish(channel, msg);
         }
         
         drillWikipedia(Drill, client, message.guid, message.start_term, message.end_term);
