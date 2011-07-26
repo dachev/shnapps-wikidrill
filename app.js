@@ -3,8 +3,6 @@ var about = [{
         items : [
             {name:'express', link:'https://github.com/visionmedia/express'},
             {name:'ejs',     link:'https://github.com/visionmedia/ejs'},
-            {name:'jsdom',   link:'https://github.com/tmpvar/jsdom'},
-            {name:'jquery',  link:null},
             {name:'restler', link:'https://github.com/ashleydev/restler'}
             
         ]

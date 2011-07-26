@@ -9,6 +9,7 @@ $(function() {
     
     initInputs();
     disableSubmit();
+    showExample();
     
     var client = new Faye.Client(location.host + '/faye', {
         timeout:120
@@ -63,6 +64,21 @@ $(function() {
         var channel = '/wikidrill/users/request/' + guid;
         client.publish(channel, args);
     });
+    
+    function showExample() {
+        var start  = 'Human';
+        var $input = $inputs.filter('#start_term');
+        
+        for (var i = 0; i < start.length; i++) (function(i) {
+            setTimeout(function() {
+                $input.val(start.slice(0, i));
+            }, i*300);
+        })(i+1);
+        
+        setTimeout(function() {
+            $doc.find('form').submit();
+        }, (i+2)*300);
+    }
     
     function makeArgs(guid) {
         var args = {guid:guid};

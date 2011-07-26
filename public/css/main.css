@@ -72,7 +72,6 @@ a, a:active, a:visited {
     -webkit-box-shadow: #F3F3F3 3px 3px;
     -moz-box-shadow: #EEE 3px 3px;
     box-shadow: #EEE 3px 3px;
-    font-size: 21px;
 }
 
 .page .box.form .text.invalid {

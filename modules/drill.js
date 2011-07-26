@@ -1,18 +1,14 @@
 var Url    = require('url');
 var Rest   = require('restler');
-var nquery = require('nquery');
+var nQuery = require('nquery');
 
 Probe.prototype = new process.EventEmitter();
 Probe.prototype.constructor = Probe;
 function Probe(startTerm, endTerm) {
-    var self     = this,
-        baseUrl  = 'http://en.wikipedia.org/wiki/',
-        startUrl = Url.parse(baseUrl + startTerm),
-        endUrl   = Url.parse(baseUrl + endTerm),
-        stack    = [],
-        $        = null,
-        counter  = 0,
-        maxHops  = 50;
+    var self        = this;
+    var stack       = [];
+    var counter     = 0;
+    var maxHops     = 50;
     
     // give users a chance to attach "error" handlers
     process.nextTick(function() {
@@ -25,10 +21,11 @@ function Probe(startTerm, endTerm) {
             return;
         }
         
-        loadPage(startUrl);
+        //loadPage(startUrl);
+        loadArticle(startTerm);
     });
     
-    function loadPage(url) {
+    function loadArticle(currentTerm) {
         if (counter >= maxHops) {
             self.emit('error', {
                 msg:'Maximum number of hops reached: ' + maxHops,
@@ -37,37 +34,45 @@ function Probe(startTerm, endTerm) {
             
             return;
         }
-            
-        var currentUrl = url,
-            request    = Rest.get(currentUrl.href, {followRedirects:true});
-                
+        
+        var editUrl = Url.format({
+            protocol : 'http',
+            hostname : 'en.wikipedia.org',
+            pathname : '/w/index.php',
+            query    : {title:currentTerm, action:'edit'}
+        });
+        
+        var viewUrl = Url.format({
+            protocol : 'http',
+            hostname : 'en.wikipedia.org',
+            pathname : '/wiki/' + currentTerm,
+        });
+        
+        var request = Rest.get(editUrl, {followRedirects:true});
         request.on('success', function(body) {
-            $ = nquery.createHtmlDocument(body);
+            var $ = nQuery.createHtmlDocument(body);
             
-            var doc  = $.window.document;
-            var $doc = $(doc);
-            
-            if (isDisambiguationPage($doc)) {
-                self.emit('error', {
-                    msg:'Disambiguation page ' + makeLink(currentUrl.href),
+            if (!body || body.indexOf('does not have an article') >= 0) {
+                return self.emit('error', {
+                    msg:'Error loading ' + makeLink(viewUrl),
                     stack:getTrace(stack)
                 });
-                
-                return;
             }
             
-            var $h1      = $doc.find('#firstHeading');
-            var title    = $h1.html();
-            var $content = $doc.find('#bodyContent');
-            var $p       = $content.children().filter('p');
-            var $links   = $p.find('a').not(filterLinks);
+            var doc      = $.window.document;
+            var $doc     = $(doc);
+            var raw      = $doc.find('textarea').html().replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+            var body     = getParagraphs(raw);
+            var links    = getInternalLinks(body);
+            var title    = currentTerm.replace(/_/g, ' ');
+            var redirect = /#REDIRECT/i.test(body);
             
             // done
-            if (currentUrl.href.toLowerCase() == endUrl.href.toLowerCase()) {
-                var item = {url:currentUrl, title:title, $links:$links};
+            if (currentTerm.toLowerCase() == endTerm.toLowerCase()) {
+                var item = {term:currentTerm, title:title, url:viewUrl, links:links};
                 stack.push(item);
-                self.emit('data', {item:getTrace([item])[0]});
-            
+                self.emit('data', {item:{title:title, url:viewUrl}});
+                
                 self.emit('complete', {
                     msg:'success',
                     stack:getTrace(stack)
@@ -76,54 +81,55 @@ function Probe(startTerm, endTerm) {
                 return;
             }
             
-            var nextUrl = pickLink(currentUrl, $links);
-            if (!nextUrl) {
-                self.emit('error', {
-                    msg:'Error finding an appropriate link in ' + makeLink(currentUrl.href),
+            var nextTerm = pickTerm(links);
+            if (!nextTerm) {
+                return self.emit('error', {
+                    msg:'Error finding an appropriate link in ' + makeLink(viewUrl),
                     stack:getTrace(stack)
                 });
-                
-                return;
             }
             
-            var item = {url:currentUrl, title:title, $links:$links};
-            stack.push(item);
-            self.emit('data', {item:getTrace([item])[0]});
+            if (redirect == false) {
+                var item = {term:currentTerm, title:title, url:viewUrl, links:links};
+                stack.push(item);
+                self.emit('data', {item:{title:title, url:viewUrl}});
+                counter++;
+            }
             
-            counter++;
-            loadPage(nextUrl);
+            loadArticle(nextTerm);
         });
         
         request.on('error', function(data) {
-            self.emit('error', {
-                msg:'Error loading ' + makeLink(currentUrl.href),
+            return self.emit('error', {
+                msg:'Error loading ' + makeLink(viewUrl),
                 stack:getTrace(stack)
             });
         });
     }
     
-    function pickLink(currentUrl, $links) {
-        for (var i = 0; i < $links.length; i++) {
-            var $link   = $links.eq(i),
-                linkUrl = $link.attr('href');
+    function pickTerm(links) {
+        for (var i = 0; i < links.length; i++) {
+            var link = links[i];
             
-            if (!linkUrl) { continue; }
-            
-            var absUrl  = Url.resolve(currentUrl, linkUrl),
-                nextUrl = Url.parse(absUrl);
-            
-            if (isWikipediaUrl(nextUrl) == false) {
+            if (isCircularTerm(link.id) == true) {
                 continue;
             }
             
-            if (isCircularUrl(nextUrl) == true) {
-                continue;
-            }
-            
-            return nextUrl;
+            return link.id;
         }
         
         return null;
+    }
+    
+    function isCircularTerm(nextTerm) {
+        for (var i = 0; i < stack.length; i++) {
+            var visitedTerm = stack[i].term;
+            if (nextTerm.toLowerCase() == visitedTerm.toLowerCase()) {
+                return true;
+            }
+        }
+        
+        return false;
     }
     
     function makeLink(url) {
@@ -137,118 +143,126 @@ function Probe(startTerm, endTerm) {
             var item = stack[i];
             
             trace.push({
-                url   : item.url.href,
+                url   : item.url,
                 title : item.title
             });
         }
-                
+        
         return trace;
     }
     
-    function isCircularUrl(nextUrl) {
-        for (var i = 0; i < stack.length; i++) {
-            var visitedUrl = stack[i].url;
-            if (visitedUrl.href == nextUrl.href) {
-                return true;
+    function getParagraphs(raw) {
+        var depth = 0;
+        var last  = '';
+        var text  = raw.replace(/{{/g, '<template>').replace(/}}/g, '</template>');
+        
+        var $    = nQuery.createHtmlDocument(text);
+        var doc  = $.window.document;
+        var $doc = $(doc);
+        
+        $doc.find('template').remove();
+        text = $doc.find('body').html().trim();
+        
+        last  = '';
+        raw   = text.trim();
+        text  = '';
+        depth = 0;
+        
+        // remove files
+        for (var i = 0; i < raw.length; i++) {
+            var current = raw.charAt(i);
+            var next    = raw.charAt(i+1);
+            
+            if (current == '[' && next == '[' &&
+                raw.charAt(i+2) == 'F' && raw.charAt(i+3) == 'i' &&
+                raw.charAt(i+4) == 'l' && raw.charAt(i+5) == 'e') {
+                
+                depth++;
+            }
+            else if (current == '[' && next == '[' && depth > 0) {
+                depth++;
+            }
+            else if (last == ']' && current == ']' && depth > 0) {
+                depth--;
+            }
+            else if (depth == 0) {
+                text += current;
+            }
+            
+            last = current;
+        }
+        
+        last  = '';
+        raw   = text.trim();
+        text  = '';
+        depth = 0;
+        
+        // remove images
+        for (var i = 0; i < raw.length; i++) {
+            var current = raw.charAt(i);
+            var next    = raw.charAt(i+1);
+            
+            if (current == '[' && next == '[' &&
+                raw.charAt(i+2) == 'I' && raw.charAt(i+3) == 'm' &&
+                raw.charAt(i+4) == 'a' && raw.charAt(i+5) == 'g' &&
+                raw.charAt(i+6) == 'e') {
+                
+                depth++;
+            }
+            else if (current == '[' && next == '[' && depth > 0) {
+                depth++;
+            }
+            else if (last == ']' && current == ']' && depth > 0) {
+                depth--;
+            }
+            else if (depth == 0) {
+                text += current;
+            }
+            
+            last = current;
+        }
+        
+        // remove files
+        var $    = nQuery.createHtmlDocument(text);
+        var doc  = $.window.document;
+        var $doc = $(doc);
+        
+        $doc.find('ref').remove();
+        text = $doc.find('body').html().trim();
+        
+        return text;
+    }
+    
+    function getInternalLinks(text) {
+        var links   = [];
+        var matches = text.match(/\[\[[^\[\]]+\]\]/g) || [];
+        
+        for (var i = 0; i < matches.length; i++) {
+            var match = matches[i].trim().replace('[[', '').replace(']]', '');
+            
+            if (match.indexOf('http://') >= 0) { continue; }
+            if (match.indexOf('#') >= 0) { continue; }
+            if (match.indexOf(':') >= 0) { continue; }
+            
+            if (match.indexOf('|') < 0) {
+                var id   = match.replace(/\s/g, '_');
+                var name = match;
+                
+                links.push({id:id, label:name});
+                continue;
+            }
+            
+            var pairs = match.split(/([^|]+)|([^|]+)/);
+            if (pairs.length == 7) {
+                var id   = (pairs[1]).replace(/\s/g, '_');
+                var name = pairs[4];
+                
+                links.push({id:id, label:name});
+                continue;
             }
         }
         
-        return false;
-    }
-
-    function isWikipediaUrl(url) {
-        if (!url.protocol || url.protocol.indexOf('http') != 0) {
-            return false;
-        }
-        if (!url.host || url.host.indexOf('wikipedia.org') < 0) {
-            return false;
-        }
-    
-        return true;
-    }
-    
-    var blacklistRe = /(language)|(taxonomy)|(oxford_english_dictionary)/;
-    function isEtymology(link) {
-        var href = link.getAttribute('href');
-        if (href && blacklistRe.test(href.toLowerCase())) {
-            return true;
-        }
-    
-        var afterParentheses  = false,
-            beforeParentheses = false,
-            beforeSnippet     = '',
-            afterSnippet      = '',
-            cnt               = 0;
-        
-        node = link;
-        while (node.previousSibling && cnt++ < 20) {
-            node = node.previousSibling;
-            
-            var text = node.nodeValue || node.textContent || '';
-            
-            beforeSnippet = text + beforeSnippet;
-        }
-        node = link;
-        while (node.nextSibling && cnt++ < 20) {
-            node = node.nextSibling;
-            
-            var text = node.nodeValue || node.textContent || '';
-            
-            afterSnippet = afterSnippet + text;
-        }
-        
-        if (beforeSnippet.indexOf('(') < 0 || afterSnippet.indexOf(')') < 0) {
-            return false;
-        }
-        
-        if (beforeSnippet.indexOf(')') >= 0 && beforeSnippet.lastIndexOf(')') > beforeSnippet.lastIndexOf('(')) {
-            return false;
-        }
-        
-        if (afterSnippet.indexOf('(') >= 0 && afterSnippet.indexOf('(') < afterSnippet.indexOf(')')) {
-            return false;
-        }
-        
-        return true;
-    }
-    
-    function isAnchor(link) {
-        var href = link.getAttribute('href');
-        if (href && href.indexOf('#') > 0) {
-            return true;
-        }
-        
-        return false;
-    }
-    
-    function filterLinks() {
-        var $this = $(this);
-        
-        if ($this.closest('.IPA').length > 0) {
-            return true;
-        }
-        if ($this.closest('.reference').length > 0) {
-            return true;
-        }
-        if (isEtymology(this)) {
-            return true;
-        }
-        if (isAnchor(this)) {
-            return true;
-        }
-        if ($this.hasClass('extiw') == true) {
-            return true;
-        }
-        
-        return false;
-    }
-    
-    function isDisambiguationPage($doc) {
-        if ($doc.find('#disambigbox').length > 0) {
-            return true;
-        }
-        
-        return false;
+        return links;
     }
 }
 
@@ -281,7 +295,6 @@ function Profiler() {
 module.exports = {
     probe:probe
 }
-
 
 
 
