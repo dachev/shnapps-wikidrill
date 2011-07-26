@@ -156,6 +156,7 @@ function Probe(startTerm, endTerm) {
         var last  = '';
         var text  = raw.replace(/{{/g, '<template>').replace(/}}/g, '</template>');
         
+        // templates files
         var $    = nQuery.createHtmlDocument(text);
         var doc  = $.window.document;
         var $doc = $(doc);
