@@ -29,7 +29,7 @@ module.exports = {
 function init(server, pubsub) {
   var express = require('express');
   var ejs     = require('ejs');
-  var drill   = require('./modules/drill');
+  var drill   = require('./lib/drill');
   var config  = require('./config')[server.settings.env] || null;
   var rest    = express.createServer();
   
