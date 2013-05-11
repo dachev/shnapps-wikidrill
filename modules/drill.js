@@ -1,300 +1,269 @@
-var Url    = require('url');
-var Rest   = require('restler');
-var nQuery = require('nquery');
+var Url     = require('url');
+var request = require('request');
 
 Probe.prototype = new process.EventEmitter();
 Probe.prototype.constructor = Probe;
-function Probe(startTerm, endTerm) {
-    var self        = this;
-    var stack       = [];
-    var counter     = 0;
-    var maxHops     = 50;
+function Probe(config, startTerm, endTerm) {
+  var self    = this;
+  var stack   = [];
+  var counter = 0;
+  var maxHops = 50;
+  
+  // give users a chance to attach "error" handlers
+  process.nextTick(function() {
+    if (startTerm.toLowerCase() == endTerm.toLowerCase()) {
+      self.emit('error', {
+        msg:'Start and end term must be different',
+        stack:getTrace(stack)
+      });
+      
+      return;
+    }
     
-    // give users a chance to attach "error" handlers
-    process.nextTick(function() {
-        if (startTerm.toLowerCase() == endTerm.toLowerCase()) {
-            self.emit('error', {
-                msg:'Start and end term must be different',
-                stack:getTrace(stack)
-            });
-            
-            return;
-        }
-        
-        //loadPage(startUrl);
-        loadArticle(startTerm);
+    loadArticle(startTerm);
+  });
+  
+  function loadArticle(currentTerm) {
+    if (counter >= maxHops) {
+      self.emit('error', {
+        msg:'Maximum number of hops reached: ' + maxHops,
+        stack:getTrace(stack)
+      });
+      
+      return;
+    }
+    
+    var editUrl = Url.format({
+      protocol : 'http',
+      hostname : 'en.wikipedia.org',
+      pathname : '/w/index.php',
+      query    : {title:currentTerm, action:'edit'}
     });
     
-    function loadArticle(currentTerm) {
-        if (counter >= maxHops) {
-            self.emit('error', {
-                msg:'Maximum number of hops reached: ' + maxHops,
-                stack:getTrace(stack)
-            });
-            
-            return;
-        }
+    var viewUrl = Url.format({
+      protocol : 'http',
+      hostname : 'en.wikipedia.org',
+      pathname : '/wiki/' + currentTerm,
+    });
+
+    var script  = scrapePage.toString();
+    var form    = {url:editUrl, script:script};
+    var apiUrl  = config.services.scrape.url;
+    var options = {url:apiUrl, json:true, form:form};
+
+    request.post(options, function(err, res, json) {
+      // error
+      if (err || json == null || !json.success) {
+        return self.emit('error', {
+          msg:'Error loading ' + makeLink(viewUrl),
+          stack:getTrace(stack)
+        });
+      }
+
+      // success
+      if (json.payload.exists === false) {
+        return self.emit('error', {
+          msg:'Error loading ' + makeLink(viewUrl),
+          stack:getTrace(stack)
+        });
+      }
+
+      var redirect = json.payload.redirect;
+      var links    = json.payload.links;
+      var title    = currentTerm.replace(/_/g, ' ');
+
+      // done
+      if (currentTerm.toLowerCase() == endTerm.toLowerCase()) {
+        var item = {term:currentTerm, title:title, url:viewUrl, links:links};
+        stack.push(item);
+        self.emit('data', {item:{title:title, url:viewUrl}});
         
-        var editUrl = Url.format({
-            protocol : 'http',
-            hostname : 'en.wikipedia.org',
-            pathname : '/w/index.php',
-            query    : {title:currentTerm, action:'edit'}
+        self.emit('complete', {
+          msg:'success',
+          stack:getTrace(stack)
         });
         
-        var viewUrl = Url.format({
-            protocol : 'http',
-            hostname : 'en.wikipedia.org',
-            pathname : '/wiki/' + currentTerm,
+        return;
+      }
+      
+      var nextTerm = pickTerm(links);
+      if (!nextTerm) {
+        return self.emit('error', {
+          msg:'Error finding an appropriate link in ' + makeLink(viewUrl),
+          stack:getTrace(stack)
         });
-        
-        var request = Rest.get(editUrl, {followRedirects:true});
-        request.on('success', function(body) {
-            var $ = nQuery.createHtmlDocument(body);
-            
-            if (!body || body.indexOf('does not have an article') >= 0) {
-                return self.emit('error', {
-                    msg:'Error loading ' + makeLink(viewUrl),
-                    stack:getTrace(stack)
-                });
-            }
-            
-            var doc      = $.window.document;
-            var $doc     = $(doc);
-            var raw      = $doc.find('textarea').html().replace(/&lt;/g, '<').replace(/&gt;/g, '>');
-            var body     = getParagraphs(raw);
-            var links    = getInternalLinks(body);
-            var title    = currentTerm.replace(/_/g, ' ');
-            var redirect = /#REDIRECT/i.test(body);
-            
-            // done
-            if (currentTerm.toLowerCase() == endTerm.toLowerCase()) {
-                var item = {term:currentTerm, title:title, url:viewUrl, links:links};
-                stack.push(item);
-                self.emit('data', {item:{title:title, url:viewUrl}});
-                
-                self.emit('complete', {
-                    msg:'success',
-                    stack:getTrace(stack)
-                });
-                
-                return;
-            }
-            
-            var nextTerm = pickTerm(links);
-            if (!nextTerm) {
-                return self.emit('error', {
-                    msg:'Error finding an appropriate link in ' + makeLink(viewUrl),
-                    stack:getTrace(stack)
-                });
-            }
-            
-            if (redirect == false) {
-                var item = {term:currentTerm, title:title, url:viewUrl, links:links};
-                stack.push(item);
-                self.emit('data', {item:{title:title, url:viewUrl}});
-                counter++;
-            }
-            
-            loadArticle(nextTerm);
-        });
-        
-        request.on('error', function(data) {
-            return self.emit('error', {
-                msg:'Error loading ' + makeLink(viewUrl),
-                stack:getTrace(stack)
-            });
-        });
+      }
+      
+      if (redirect == false) {
+        var item = {term:currentTerm, title:title, url:viewUrl, links:links};
+        stack.push(item);
+        self.emit('data', {item:{title:title, url:viewUrl}});
+        counter++;
+      }
+      
+      loadArticle(nextTerm);
+    });
+  }
+  
+  function pickTerm(links) {
+    for (var i = 0; i < links.length; i++) {
+      var link = links[i];
+      
+      if (isCircularTerm(link.id) == true) {
+        continue;
+      }
+      
+      return link.id;
     }
     
-    function pickTerm(links) {
-        for (var i = 0; i < links.length; i++) {
-            var link = links[i];
-            
-            if (isCircularTerm(link.id) == true) {
-                continue;
-            }
-            
-            return link.id;
-        }
-        
-        return null;
+    return null;
+  }
+  
+  function isCircularTerm(nextTerm) {
+    for (var i = 0; i < stack.length; i++) {
+      var visitedTerm = stack[i].term;
+      if (nextTerm.toLowerCase() == visitedTerm.toLowerCase()) {
+        return true;
+      }
     }
     
-    function isCircularTerm(nextTerm) {
-        for (var i = 0; i < stack.length; i++) {
-            var visitedTerm = stack[i].term;
-            if (nextTerm.toLowerCase() == visitedTerm.toLowerCase()) {
-                return true;
-            }
-        }
-        
-        return false;
+    return false;
+  }
+  
+  function makeLink(url) {
+    return ['<a href="', url, '">', url, '</a>'].join('');
+  }
+  
+  function getTrace(stack) {
+    var trace = [];
+    
+    for (var i = 0; i < stack.length; i++) {
+      var item = stack[i];
+      
+      trace.push({
+        url   : item.url,
+        title : item.title
+      });
     }
     
-    function makeLink(url) {
-        return ['<a href="', url, '">', url, '</a>'].join('');
-    }
-    
-    function getTrace(stack) {
-        var trace = [];
+    return trace;
+  }
+
+  function scrapePage() {
+    function getParagraphs($, raw) {
+      var raw   = raw.replace(/{{/g, '<template>').replace(/}}/g, '</template>');
+      var raw   = $('<root>' + raw + '</root>').find('template').remove().end().html().trim();
+      var depth = 0;
+      var last  = '';
+      var text  = '';
+      
+      // remove files
+      for (var i = 0; i < raw.length; i++) {
+        var current = raw.charAt(i);
+        var next    = raw.charAt(i+1);
         
-        for (var i = 0; i < stack.length; i++) {
-            var item = stack[i];
-            
-            trace.push({
-                url   : item.url,
-                title : item.title
-            });
+        if (current == '[' && next == '[' &&
+          raw.charAt(i+2) == 'F' && raw.charAt(i+3) == 'i' &&
+          raw.charAt(i+4) == 'l' && raw.charAt(i+5) == 'e') {
+          
+          depth++;
+        }
+        else if (current == '[' && next == '[' && depth > 0) {
+          depth++;
+        }
+        else if (last == ']' && current == ']' && depth > 0) {
+          depth--;
+        }
+        else if (depth == 0) {
+          text += current;
         }
         
-        return trace;
-    }
-    
-    function getParagraphs(raw) {
-        var depth = 0;
-        var last  = '';
-        var text  = raw.replace(/{{/g, '<template>').replace(/}}/g, '</template>');
+        last = current;
+      }
+      
+      last  = '';
+      raw   = text.trim();
+      text  = '';
+      depth = 0;
+      
+      // remove images
+      for (var i = 0; i < raw.length; i++) {
+        var current = raw.charAt(i);
+        var next    = raw.charAt(i+1);
         
-        // templates files
-        var $    = nQuery.createHtmlDocument(text);
-        var doc  = $.window.document;
-        var $doc = $(doc);
-        
-        $doc.find('template').remove();
-        text = $doc.find('body').html().trim();
-        
-        last  = '';
-        raw   = text.trim();
-        text  = '';
-        depth = 0;
-        
-        // remove files
-        for (var i = 0; i < raw.length; i++) {
-            var current = raw.charAt(i);
-            var next    = raw.charAt(i+1);
-            
-            if (current == '[' && next == '[' &&
-                raw.charAt(i+2) == 'F' && raw.charAt(i+3) == 'i' &&
-                raw.charAt(i+4) == 'l' && raw.charAt(i+5) == 'e') {
-                
-                depth++;
-            }
-            else if (current == '[' && next == '[' && depth > 0) {
-                depth++;
-            }
-            else if (last == ']' && current == ']' && depth > 0) {
-                depth--;
-            }
-            else if (depth == 0) {
-                text += current;
-            }
-            
-            last = current;
+        if (current == '[' && next == '[' &&
+          raw.charAt(i+2) == 'I' && raw.charAt(i+3) == 'm' &&
+          raw.charAt(i+4) == 'a' && raw.charAt(i+5) == 'g' &&
+          raw.charAt(i+6) == 'e') {
+          
+          depth++;
+        }
+        else if (current == '[' && next == '[' && depth > 0) {
+          depth++;
+        }
+        else if (last == ']' && current == ']' && depth > 0) {
+          depth--;
+        }
+        else if (depth == 0) {
+          text += current;
         }
         
-        last  = '';
-        raw   = text.trim();
-        text  = '';
-        depth = 0;
+        last = current;
+      }
+      
+      // remove files
+      return $('<root>' + text + '</root>').find('ref').remove().end().html().trim();
+    }
         
-        // remove images
-        for (var i = 0; i < raw.length; i++) {
-            var current = raw.charAt(i);
-            var next    = raw.charAt(i+1);
-            
-            if (current == '[' && next == '[' &&
-                raw.charAt(i+2) == 'I' && raw.charAt(i+3) == 'm' &&
-                raw.charAt(i+4) == 'a' && raw.charAt(i+5) == 'g' &&
-                raw.charAt(i+6) == 'e') {
-                
-                depth++;
-            }
-            else if (current == '[' && next == '[' && depth > 0) {
-                depth++;
-            }
-            else if (last == ']' && current == ']' && depth > 0) {
-                depth--;
-            }
-            else if (depth == 0) {
-                text += current;
-            }
-            
-            last = current;
+    function getInternalLinks(jQuery, text) {
+      var links   = [];
+      var matches = text.match(/\[\[[^\[\]]+\]\]/g) || [];
+      
+      for (var i = 0; i < matches.length; i++) {
+        var match = matches[i].trim().replace('[[', '').replace(']]', '');
+        
+        if (match.indexOf('http://') >= 0) { continue; }
+        if (match.indexOf('#') >= 0) { continue; }
+        if (match.indexOf(':') >= 0) { continue; }
+        
+        if (match.indexOf('|') < 0) {
+          var id   = match.replace(/\s/g, '_');
+          var name = match;
+          
+          links.push({id:id, label:name});
+          continue;
         }
         
-        // remove files
-        var $    = nQuery.createHtmlDocument(text);
-        var doc  = $.window.document;
-        var $doc = $(doc);
-        
-        $doc.find('ref').remove();
-        text = $doc.find('body').html().trim();
-        
-        return text;
-    }
-    
-    function getInternalLinks(text) {
-        var links   = [];
-        var matches = text.match(/\[\[[^\[\]]+\]\]/g) || [];
-        
-        for (var i = 0; i < matches.length; i++) {
-            var match = matches[i].trim().replace('[[', '').replace(']]', '');
-            
-            if (match.indexOf('http://') >= 0) { continue; }
-            if (match.indexOf('#') >= 0) { continue; }
-            if (match.indexOf(':') >= 0) { continue; }
-            
-            if (match.indexOf('|') < 0) {
-                var id   = match.replace(/\s/g, '_');
-                var name = match;
-                
-                links.push({id:id, label:name});
-                continue;
-            }
-            
-            var pairs = match.split(/([^|]+)|([^|]+)/);
-            if (pairs.length == 7) {
-                var id   = (pairs[1]).replace(/\s/g, '_');
-                var name = pairs[4];
-                
-                links.push({id:id, label:name});
-                continue;
-            }
+        var pairs = match.split(/([^|]+)|([^|]+)/);
+        if (pairs.length == 7) {
+          var id   = (pairs[1]).replace(/\s/g, '_');
+          var name = pairs[4];
+          
+          links.push({id:id, label:name});
+          continue;
         }
-        
-        return links;
+      }
+      
+      return links;
     }
+
+    var $doc     = $(window.document);
+    var exists   = $doc.text().indexOf('does not have an article') < 0;
+    var raw      = exists && $doc.find('textarea').html().replace(/&lt;/g, '<').replace(/&gt;/g, '>') || '';
+    var body     = exists && getParagraphs(jQuery, raw) || '';
+    var redirect = /#REDIRECT/i.test(body);
+    var links    = exists && getInternalLinks(jQuery, body) || [];
+
+    return {exists:exists, redirect:redirect, links:links};
+  }
 }
 
-function probe(startTerm, endTerm) {
-    return new Probe(startTerm, endTerm);
+function probe(config, startTerm, endTerm) {
+  return new Probe(config, startTerm, endTerm);
 };
 
-function Profiler() {
-    var start = +new Date,
-        count = 0;
-    
-    this.log = function(label) {
-        var now = (+new Date);
-        
-        count++;
-        var msg = count + ':' + (now - start);
-        if (label) {
-            msg += ' (' + label + ')';
-        }
-        
-        console.log(msg);
-        start = now;
-    }
-    
-    this.finalize = function() {
-        console.log('---------------------');
-    }
-}
-
 module.exports = {
-    probe:probe
+  probe:probe
 }
 
 
