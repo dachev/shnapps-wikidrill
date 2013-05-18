@@ -11,7 +11,7 @@ $(function() {
     disableSubmit();
     showExample();
     
-    var client = new Faye.Client(location.host + '/faye', {
+    var client = new Faye.Client(location.protocol + '//' + location.host + '/faye', {
         timeout:120
     });
     client.subscribe('/wikidrill/users/response/' + guid, function(data) {

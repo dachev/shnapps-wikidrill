@@ -3,7 +3,7 @@ var about = [
     name  : 'require',
     items : [
       {name:'express',    link:'https://github.com/visionmedia/express'},
-      {name:'ejs',        link:'https://github.com/visionmedia/ejs'},
+      {name:'utml',       link:'https://github.com/mikefrey/utml'},
       {name:'request',    link:'https://github.com/mikeal/request'},
       {name:'underscore', link:'https://github.com/documentcloud/underscore'}
     ]
@@ -28,23 +28,25 @@ module.exports = {
 
 function init(server, pubsub) {
   var express = require('express');
-  var ejs     = require('ejs');
+  var rest    = express();
+  var utml    = require('utml');
   var drill   = require('./lib/drill');
   var config  = require('./config')[server.settings.env] || null;
-  var rest    = express.createServer();
   
   rest.use(express.static(__dirname + '/public'));
   
   // configure views
   rest.set('views', __dirname + '/views');
-  rest.register('.html', ejs);
   rest.set('view engine', 'html');
-  rest.helpers({
-    rootPath: server.settings.views
-  });
+  rest.engine('html', utml.__express);
   
   rest.get('/', function(req, res, next) {
-    res.render('index', {about:about});
+    res.render('index', {
+      locals : {
+        rootPath : server.settings.views,
+        about    : about
+      }
+    });
   });
   
   var client = pubsub.getClient();

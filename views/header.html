@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Wiki Drill</title>
+    <link rel="stylesheet" href="/css/reset.css"/>
+    <link rel="stylesheet" href="/css/xul.css"/>
+    <link rel="stylesheet" href="/css/jquery.gritter.css"/>
+    <link rel="stylesheet" href="/css/global.css"/>
+    <link rel="stylesheet" href="/wikidrill/css/buttons.css"/>
+    <link rel="stylesheet" href="/wikidrill/css/main.css"/>
+    <script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jquery/1.4.4/jquery.min.js"></script>
+    <script type="text/javascript" src="/js/jquery.gritter.min.js"></script>
+    <script type="text/javascript" src="/js/about.js"></script>
+    <script type="text/javascript" src="/faye.js"></script>
+    <script type="text/javascript" src="/wikidrill/js/underscore.1.1.7.min.js"></script>
+    <script type="text/javascript" src="/wikidrill/js/main.js"></script>
+    <script type="text/javascript">
+      _.templateSettings = {
+        evaluate    : /<#([\s\S]+?)#>/g,
+        interpolate : /<#=([\s\S]+?)#>/g
+      };
+    </script>
+    <script id="item_template" class="template" type="text/html">
+      <li>
+        <a href="<#= item.url #>"><#= item.title #></a>
+      </li>
+    </script>
+  </head>
+  <body>
