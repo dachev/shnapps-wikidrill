@@ -1,13 +1,13 @@
 module.exports = {
-  development:{
-    services: {
+  development : {
+    services : {
       scrape : {
         url : 'http://blago.dachev.com/scrape/api/v1/scrape'
       }
     }
   },
-  production:{
-    services: {
+  staging : {
+    services : {
       scrape : {
         url : 'http://blago.dachev.com/scrape/api/v1/scrape'
       }

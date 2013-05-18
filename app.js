@@ -65,7 +65,6 @@ function init(server, pubsub) {
   module.exports.rest = rest;
 }
 
-    
 function drillWikipedia(config, drill, client, guid, startTerm, endTerm) {
   var probe   = drill.probe(config, startTerm, endTerm);
   var channel = '/wikidrill/users/response/' + guid;
