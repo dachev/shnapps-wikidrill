@@ -69,9 +69,9 @@ function initPubsub(config, pubsub, cb) {
   client.subscribe('/wikidrill/users/request/*', function(message) {
     if (!message.start_term || !message.end_term) {
       var channel = '/wikidrill/users/request/' + message.guid;
-      var msg     = {
-        type : 'error',
-        msg  : 'Start or end page is missing or invalid'
+      var msg = {
+        type: 'error',
+        message: 'Start or end page is missing or invalid'
       };
       
       return client.publish(channel, msg);
@@ -133,7 +133,7 @@ function renderHTMLError(req, res, code, data) {
     locals : {
       status  : 500,
       request : req,
-      msg     : data.message
+      message : data.message
     }
   });
 }
@@ -177,9 +177,10 @@ function drillWikipedia(config, drill, client, guid, startTerm, endTerm) {
   
   probe.on('error', function(data) {
     var msg = {
-      type  : 'error',
-      msg   : data.msg || 'Unknow server error',
-      stack : data.stack
+      type: 'error',
+      message: 'Wikidrill server error',
+      trail: data.trail,
+      error: data.error
     };
     
     return client.publish(channel, msg);
@@ -187,9 +188,9 @@ function drillWikipedia(config, drill, client, guid, startTerm, endTerm) {
   
   probe.on('complete', function(data) {
     var msg = {
-      type  : 'success',
-      msg   : data.msg || '',
-      stack : data.stack
+      type: 'success',
+      message: data.message || '',
+      trail: data.trail
     };
     
     return client.publish(channel, msg);

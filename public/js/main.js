@@ -23,7 +23,7 @@ $(function() {
         enableSubmit();
         $submit.removeClass('working');
         $status.removeClass('working').addClass('done');
-        $status.addClass(data.type).find('.message').html(data.msg || '');
+        $status.addClass(data.type).find('.message').html(data.message || '');
     });
     
     $doc.delegate('a', 'click', function(ev) {

@@ -9,7 +9,14 @@ module.exports = {
   staging : {
     services : {
       scrape : {
-        url : 'http://blago.dachev.com/scrape/api/v1/scrape'
+        url : 'http://dev.shnapps.dachev.com/scrape/api/v1/scrape'
+      }
+    }
+  },
+  production : {
+    services : {
+      scrape : {
+        url : 'http://shnapps.dachev.com/scrape/api/v1/scrape'
       }
     }
   }
